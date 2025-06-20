@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: plcnextdb
+    volumes:
+      - ./pgvector-init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+  backend:
+    build: ./backend
+    depends_on:
+      - postgres
+      - ollama
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgresql://user:password@postgres:5432/plcnextdb
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  ollama:

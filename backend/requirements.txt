@@ -1,0 +1,22 @@
+# แพ็กเกจพื้นฐาน
+flask
+psycopg2-binary
+langchain
+langchain-community
+langchain-ollama
+sentence-transformers
+requests
+python-dotenv
+pgvector
+flask_cors
+retriever
+langchain-core
+
+# สำหรับประมวลผลไฟล์
+pypdf               # สำหรับ PDF
+pandas              # สำหรับ CSV / JSON
+lxml                # บางตัวโหลด XML/HTML
+openpyxl           # สำหรับ Excel files
+
+# เพิ่มเติมสำหรับ vector database
+tiktoken           # สำหรับ tokenization
