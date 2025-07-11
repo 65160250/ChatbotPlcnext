@@ -1,0 +1,33 @@
+[
+  {
+    "category": "basic",
+    "question": "What is PLCnext Technology?",
+    "answer": "PLCnext Technology is an open automation platform developed by Phoenix Contact. It combines the strengths of traditional PLCs with the flexibility of modern IT systems. PLCnext enables real-time communication, supports multiple programming languages (such as IEC 61131-3, C++, and Python), and allows seamless integration of open-source and third-party software. It is ideal for industrial applications that require scalability, flexibility, and integration with cloud or IoT technologies."
+  },
+  {
+    "category": "basic",
+    "question": "What is the main advantage of PLCnext?",
+    "answer": "The main advantage is its openness and flexibility, allowing engineers to use the best programming language for the task, combine existing code, and integrate open-source software, which significantly speeds up application development."
+  },
+  {
+    "category": "troubleshooting",
+    "question": "Cannot warm start PLC with AXC F 3152",
+    "context": "User is using AXC F 3152 with HW version 3 and FW version 2025.0.3. Gets error 'Arp.Plc.Domain.Plc.Condition.Failed' when trying to start PLC. Error message shows 'Starting Plc is prevented by 'Arp.Hardware.DeviceHmi' because of 'Start/Stop switch'.",
+    "answer": "The issue is likely caused by the Start/Stop switch position. Check that the switch is set to 'Start' position (not 'Stop'). The hardware device HMI is preventing the PLC from starting due to the switch configuration.",
+    "source": "PLCnext Forum - User dimitrismvm"
+  },
+  {
+    "category": "specification",
+    "question": "What is the firmware version compatibility for AXC F 3152?",
+    "context": "AXC F 3152 controller supports various firmware versions. Users report working with FW version 2025.0.3 (25.0.3.103) with HW version 3.",
+    "answer": "The AXC F 3152 is compatible with firmware version 2025.0.3 (25.0.3.103) when using hardware version 3.",
+    "source": "PLCnext Forum - User dimitrismvm"
+  },
+  {
+    "category": "error_resolution",
+    "question": "How to resolve Arp.Plc.Domain.Plc.Condition.Failed error?",
+    "context": "Error occurs during PLC startup with message 'Starting Plc is prevented by 'Arp.Hardware.DeviceHmi' because of 'Start/Stop switch'. This typically happens when the physical switch is in wrong position.",
+    "answer": "To resolve this error: 1) Check the physical Start/Stop switch on the PLC unit, 2) Ensure the switch is in 'Start' position (not 'Stop'), 3) The switch position must match the software configuration, 4) If switch is correct, check HMI device configuration.",
+    "source": "PLCnext Forum - Community Solution"
+  }
+]

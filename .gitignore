@@ -9,6 +9,8 @@ __pycache__/
 venv/
 .env
 *.sqlite
+# Downloaded models cache - บรรทัดนี้สำคัญที่สุด
+models/
 
 # Docker
 *.log

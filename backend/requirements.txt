@@ -1,22 +1,25 @@
-# แพ็กเกจพื้นฐาน
-flask
+# FastAPI and Server
+fastapi
+uvicorn[standard]
+
+# Database and Vector
 psycopg2-binary
+pgvector
+
+# LangChain and AI
 langchain
 langchain-community
 langchain-ollama
+langchain-core
 sentence-transformers
 requests
+flashrank
+
+# Document Loaders
+langchain-docling
+pypdf
+
+# Utilities
 python-dotenv
-pgvector
-flask_cors
-retriever
-langchain-core
-
-# สำหรับประมวลผลไฟล์
-pypdf               # สำหรับ PDF
-pandas              # สำหรับ CSV / JSON
-lxml                # บางตัวโหลด XML/HTML
-openpyxl           # สำหรับ Excel files
-
-# เพิ่มเติมสำหรับ vector database
-tiktoken           # สำหรับ tokenization
+redis # <-- เพิ่มเข้ามาใหม่
+langchain-docling

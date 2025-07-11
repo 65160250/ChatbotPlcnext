@@ -1,40 +1,74 @@
+version: '3.8'
+
 services:
+  # Service สำหรับฐานข้อมูล PostgreSQL
   postgres:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:pg16 # แนะนำให้ใช้เวอร์ชันที่เจาะจงเพื่อความเสถียร
+    container_name: plcnext-chatbot-postgres-1
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: plcnextdb
     volumes:
-      - ./pgvector-init:/docker-entrypoint-initdb.d
+      - plcnext-data:/var/lib/postgresql/data # เก็บข้อมูลฐานข้อมูลอย่างถาวร
+      # --- บรรทัดที่สำคัญที่สุดที่ต้องเพิ่มเข้ามา ---
+      - ./pgvector-init:/docker-entrypoint-initdb.d # รันสคริปต์ init.sql ตอนสร้างครั้งแรก
     ports:
       - "5432:5432"
+    restart: unless-stopped
 
+  # Service สำหรับ LLM Server
   ollama:
     image: ollama/ollama:latest
+    container_name: plcnext-chatbot-ollama-1
+    volumes:
+      - ollama_data:/root/.ollama
     ports:
       - "11434:11434"
-    volumes:
-      - ollama:/root/.ollama
+    restart: unless-stopped
 
+  # Service สำหรับ Redis Caching
+  redis:
+    image: redis:7-alpine
+    container_name: plcnext-chatbot-redis-1
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  # Service สำหรับ Backend (API)
   backend:
     build: ./backend
+    container_name: plcnext-chatbot-backend-1
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000", "--reload"]
+    volumes:
+      - ./backend:/app
+    ports:
+      - "5000:5000"
+    environment:
+      - DATABASE_URL=postgresql://user:password@postgres:5432/plcnextdb
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    restart: unless-stopped
     depends_on:
       - postgres
       - ollama
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./backend:/app
-    environment:
-      - DATABASE_URL=postgresql://user:password@postgres:5432/plcnextdb
+      - redis
 
+  # Service สำหรับ Frontend (UI)
   frontend:
     build: ./frontend
+    container_name: plcnext-chatbot-frontend-1
     ports:
-      - "5173:5173"
+      - "5173:5173" # ถูกต้องสำหรับ Vite Dev Server
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    restart: unless-stopped
     depends_on:
       - backend
 
+# ประกาศ Volumes ที่จะใช้เก็บข้อมูลอย่างถาวร
 volumes:
-  ollama:
+  plcnext-data:
+  ollama_data:
