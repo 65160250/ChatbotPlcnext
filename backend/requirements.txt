@@ -21,9 +21,3 @@ pypdf
 
 # Utilities
 python-dotenv
-<<<<<<< HEAD
-# redis 
-=======
-redis # <-- เพิ่มเข้ามาใหม่
->>>>>>> dad24a25dafd38af014dc0d8eed1cebc324be82e
-langchain-docling

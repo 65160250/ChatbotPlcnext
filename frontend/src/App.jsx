@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Send, Bot, User, Copy, Check, BrainCircuit, PanelLeft } from 'lucide-react';
+import { Send, Bot, User, Copy, Check, BrainCircuit, PanelLeft, Paperclip, Mic, Plus } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 
-// Component สำหรับแสดง Code Block พร้อมปุ่มคัดลอก
+// ...[CodeBlock, MessageContent, Message components เหมือนเดิม]...
+
 const CodeBlock = ({ language, value }) => {
     const [isCopied, setIsCopied] = useState(false);
     const handleCopy = () => {
@@ -30,7 +31,6 @@ const CodeBlock = ({ language, value }) => {
     );
 };
 
-// Component สำหรับจัดการแสดงผลข้อความและ Code Block
 const MessageContent = ({ text }) => {
     const codeBlockRegex = /```(\w+)?\n([\s\S]+?)\n```/g;
     const parts = text.split(codeBlockRegex);
@@ -38,10 +38,10 @@ const MessageContent = ({ text }) => {
     return (
         <div>
             {parts.map((part, index) => {
-                if (index % 3 === 2) { // นี่คือส่วนของโค้ด
+                if (index % 3 === 2) {
                     const language = parts[index - 1] || 'plaintext';
                     return <CodeBlock key={index} language={language} value={part} />;
-                } else if (index % 3 === 0) { // นี่คือส่วนของข้อความธรรมดา
+                } else if (index % 3 === 0) {
                     return <p key={index} className="whitespace-pre-wrap">{part}</p>;
                 }
                 return null;
@@ -50,7 +50,6 @@ const MessageContent = ({ text }) => {
     );
 };
 
-// Component สำหรับแสดงแต่ละข้อความ (ของ User และ Bot)
 const Message = ({ text, sender }) => {
     const isUser = sender === 'user';
     return (
@@ -85,19 +84,26 @@ function App() {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
+    // ฟังก์ชันสำหรับปุ่มที่ยังไม่ implement จริง
+    const handleFeatureNotImplemented = (feature) => {
+        alert(`${feature} feature is not implemented yet.`);
+    };
+
+    // New Chat: Reset message
+    const handleNewChat = () => {
+        setMessages([{ text: 'Hello! I am Panya, your AI assistant for PLCnext. How can I help you today?', sender: 'bot' }]);
+        setInput('');
+    };
+
     const handleSendMessage = async (e) => {
         e.preventDefault();
         if (!input.trim() || isLoading) return;
-
         const userMessage = { text: input, sender: 'user' };
         setMessages(prev => [...prev, userMessage]);
         setInput('');
         setIsLoading(true);
 
         try {
-            // --- จุดเชื่อมต่อ Backend ที่สำคัญ ---
-            // ใช้ /api/chat ซึ่งตรงกับ proxy ใน vite.config.js
-            // และส่ง payload เป็น { message: input } ซึ่งตรงกับที่ backend ต้องการ
             const response = await axios.post('/api/chat', { message: input });
             const botMessage = { text: response.data.reply, sender: 'bot' };
             setMessages(prev => [...prev, botMessage]);
@@ -113,16 +119,30 @@ function App() {
 
     return (
       <div className="flex h-screen bg-white text-gray-800 font-sans">
+        {/* Sidebar */}
         <aside className={`bg-gray-50 border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-72 p-4' : 'w-0 p-0'}`}>
           <div className={`flex-shrink-0 mb-6 flex items-center gap-3 overflow-hidden ${isSidebarOpen ? 'opacity-100' : 'opacity-0'}`}>
-            <div className="bg-blue-600 p-2 rounded-lg">
-              <img src="/src/assets/logo.png" alt="PLCnext Logo" className="w-8 h-8 object-contain" />
+            {/* Logo แบบวงกลม */}
+            <div className="bg-blue-600 p-1 rounded-full flex items-center justify-center">
+              <img
+                src="/src/assets/logo.png"
+                alt="PLCnext Logo"
+                className="w-12 h-12 object-cover rounded-full border-4 border-white shadow"
+              />
             </div>
             <div><h1 className="text-xl font-bold text-gray-900">PLCnext AI</h1></div>
           </div>
-          {/* พื้นที่สำหรับแสดงประวัติการแชทในอนาคต */}
+          {/* ปุ่ม New Chat */}
+          <button
+            className="flex items-center justify-center gap-2 w-full p-2.5 mb-4 bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors text-sm font-semibold mx-auto"
+            onClick={handleNewChat}
+          >
+            <Plus size={18} /> New Chat
+          </button>
+          {/* พื้นที่สำหรับประวัติการแชท (option) */}
         </aside>
 
+        {/* Main Content */}
         <div className="flex-1 flex flex-col bg-gray-100">
           <header className="flex items-center p-2 bg-white border-b border-gray-200 shadow-sm">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"><PanelLeft size={20} /></button>
@@ -150,9 +170,31 @@ function App() {
             </div>
           </main>
           
+          {/* Footer with input + icons */}
           <footer className="p-4 bg-gray-100/80 backdrop-blur-sm">
             <div className="max-w-4xl mx-auto">
               <form onSubmit={handleSendMessage} className="flex items-center space-x-2 bg-white border border-gray-300 rounded-full p-2 shadow-sm focus-within:ring-2 focus-within:ring-blue-500 transition-all">
+                {/* ปุ่มแนบไฟล์ */}
+                <button
+                  type="button"
+                  onClick={() => handleFeatureNotImplemented('Attach File')}
+                  className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors"
+                  aria-label="Attach file"
+                  disabled={isLoading}
+                >
+                  <Paperclip size={20} />
+                </button>
+                {/* ปุ่มไมค์ */}
+                <button
+                  type="button"
+                  onClick={() => handleFeatureNotImplemented('Microphone')}
+                  className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors"
+                  aria-label="Use microphone"
+                  disabled={isLoading}
+                >
+                  <Mic size={20} />
+                </button>
+                {/* Input */}
                 <input
                   type="text"
                   value={input}
@@ -161,6 +203,7 @@ function App() {
                   className="flex-1 bg-transparent focus:outline-none px-2 text-gray-800 placeholder-gray-500"
                   disabled={isLoading}
                 />
+                {/* Send */}
                 <button type="submit" className="bg-blue-600 text-white p-2.5 rounded-full font-semibold hover:bg-blue-700 transition-colors shadow-sm disabled:bg-blue-300 disabled:cursor-not-allowed flex-shrink-0" disabled={isLoading || !input.trim()} aria-label="Send message"><Send size={20} /></button>
               </form>
             </div>
