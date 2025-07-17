@@ -4,7 +4,7 @@ import requests
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, HTTPException, UploadFile, File
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -19,6 +19,11 @@ import numpy as np
 import soundfile as sf
 from faster_whisper import WhisperModel
 import tempfile
+
+import pytesseract
+from PIL import Image
+import io
+
 
 # --- Configuration ---
 DB_URL = os.getenv("DATABASE_URL")
@@ -303,6 +308,32 @@ async def transcribe(file: UploadFile = File(...)):
     segments, _ = model.transcribe(tmp_path, language="en", beam_size=1)
     transcript = "".join([s.text for s in segments])
     return {"text": transcript}
+
+@app.post("/api/chat-image", response_model=ChatResponse)
+async def chat_image(
+    request: Request,
+    file: UploadFile = File(...),
+    message: str = Form("")
+):
+    # 1. แปลงไฟล์ภาพเป็นข้อความด้วย OCR
+    image = Image.open(io.BytesIO(await file.read()))
+    ocr_text = pytesseract.image_to_string(image)
+
+    # 2. รวมข้อความที่ user ถาม + ที่ได้จาก OCR
+    final_question = ((message or "") + "\n" + ocr_text).strip()
+    db_pool = request.app.state.db_pool
+    llm = request.app.state.llm
+    embedder = request.app.state.embedder
+    result = answer_question(
+        question=final_question,
+        db_pool=db_pool,
+        llm=llm,
+        embedder=embedder,
+        collection="plcnext",
+        retriever_class=PostgresVectorRetriever,
+        reranker_class=EnhancedFlashrankRerankRetriever,
+    )
+    return ChatResponse(**result)
 
 
 if __name__ == "__main__":

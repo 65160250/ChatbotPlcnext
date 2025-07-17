@@ -22,10 +22,16 @@ pypdf
 # Utilities
 python-dotenv
 
-#Whisper
+# Whisper
 sounddevice
 soundfile
 numpy
 faster-whisper
 torch
 python-multipart
+
+# OCR
+pytesseract
+Pillow
+
+

@@ -92,22 +92,19 @@ const MessageContent = ({ text }) => {
   );
 };
 
-const Message = ({ text, sender }) => {
+const Message = ({ text, sender, image }) => {
   const isUser = sender === "user";
   return (
-    <div
-      className={`flex items-start gap-3 ${isUser ? "justify-end" : ""} my-4`}
-    >
+    <div className={`flex items-start gap-3 ${isUser ? "justify-end" : ""} my-4`}>
       {!isUser && (
         <div className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-gray-700 text-white">
           <Bot size={20} />
         </div>
       )}
-      <div
-        className={`max-w-2xl px-5 py-3 rounded-xl shadow-sm break-words ${
-          isUser ? "bg-blue-600 text-white" : "bg-white text-gray-800 border"
-        }`}
-      >
+      <div className={`max-w-2xl px-5 py-3 rounded-xl shadow-sm break-words ${isUser ? "bg-blue-600 text-white" : "bg-white text-gray-800 border"}`}>
+        {image && (
+          <img src={image} alt="upload" className="mb-2 max-h-40 rounded border" />
+        )}
         <MessageContent text={text} />
       </div>
       {isUser && (
@@ -119,6 +116,7 @@ const Message = ({ text, sender }) => {
   );
 };
 
+
 function App() {
   const [chatHistory, setChatHistory] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
@@ -126,6 +124,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null); 
+  const [imageFile, setImageFile] = useState(null);
+
 
   // ------ สำหรับ voice to text ------
   const [isListening, setIsListening] = useState(false);
@@ -271,7 +271,11 @@ function App() {
     e.preventDefault();
     if (!input.trim() || isLoading || !activeChatId) return;
 
-    const userMessage = { text: input, sender: "user" };
+    const userMessage = {
+      text: input,
+      sender: "user",
+      image: imageFile ? URL.createObjectURL(imageFile) : null,
+    };
     setInput("");
     setIsLoading(true);
 
@@ -295,9 +299,19 @@ function App() {
     });
 
     try {
-      const response = await axios.post(`${API_URL}/api/chat`, {
-        message: input,
-      });
+      let response;
+      if (imageFile) {
+        const formData = new FormData();
+        formData.append("file", imageFile);
+        formData.append("message", input);
+        response = await axios.post(
+          `${API_URL}/api/chat-image`,
+          formData,
+          { headers: { "Content-Type": "multipart/form-data" } }
+        );
+      } else {
+        response = await axios.post(`${API_URL}/api/chat`, { message: input });
+      }
       const botMessage = { text: response.data.reply, sender: "bot" };
       setChatHistory((prev) => {
         const newHistory = [...prev];
@@ -326,6 +340,7 @@ function App() {
       });
     } finally {
       setIsLoading(false);
+      setImageFile(null); // ล้างไฟล์หลังส่ง
     }
   };
 
@@ -353,7 +368,7 @@ function App() {
                 className="w-10 h-10 object-cover rounded-full border-2 border-white shadow"
               />
             </div>
-            <h1 className="text-xl font-bold text-gray-900">PLCnext AI</h1>
+            <h1 className="text-xl font-bold text-gray-900">Panya</h1>
           </div>
         </div>
 
@@ -444,7 +459,7 @@ function App() {
         <main className="flex-1 p-6 overflow-y-auto">
           <div className="max-w-4xl mx-auto">
             {messagesToDisplay.map((msg, index) => (
-              <Message key={index} text={msg.text} sender={msg.sender} />
+              <Message key={index} text={msg.text} sender={msg.sender} image={msg.image}/>
             ))}
             {isLoading && (
               <div className="flex items-start gap-3 my-4">
@@ -468,46 +483,64 @@ function App() {
     {/* ฟุตเตอร์ 3 โหมด */}
     {!isListening && !isTranscribing && (
       <form
-        onSubmit={handleSendMessage}
-        className="flex items-center space-x-2 bg-white border border-gray-300 rounded-full p-2 shadow-sm focus-within:ring-2 focus-within:ring-blue-500 transition-all"
-      >
-        {/* ปุ่มแนบไฟล์ */}
-        <button
-          type="button"
-          onClick={() => handleFeatureNotImplemented("Attach File")}
-          className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors"
-          aria-label="Attach file"
-          disabled={isLoading}
-        >
-          <Paperclip size={20} />
-        </button>
-        {/* ปุ่มไมค์ "ของจริง" */}
-        <button
-          type="button"
-          onClick={handleStartListening}
-          className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors"
-          aria-label="Use microphone"
-          disabled={isLoading}
-        >
-          <Mic size={20} />
-        </button>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask something about PLCnext..."
-          className="flex-1 bg-transparent focus:outline-none px-4 text-gray-800 placeholder-gray-500"
-          disabled={isLoading}
-        />
-        <button
-          type="submit"
-          className="bg-blue-600 text-white p-2.5 rounded-full font-semibold hover:bg-blue-700 transition-colors shadow-sm disabled:bg-blue-300 disabled:cursor-not-allowed flex-shrink-0"
-          disabled={isLoading || !input.trim()}
-          aria-label="Send message"
-        >
-          <Send size={20} />
-        </button>
-      </form>
+              onSubmit={handleSendMessage}
+              className="flex items-center space-x-2 bg-white border border-gray-300 rounded-full p-2 shadow-sm focus-within:ring-2 focus-within:ring-blue-500 transition-all"
+            >
+              {/* ปุ่มแนบไฟล์ (image เท่านั้น) */}
+              <label className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors cursor-pointer">
+                <Paperclip size={20} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={e => {
+                    if (e.target.files[0]) setImageFile(e.target.files[0]);
+                  }}
+                  disabled={isLoading}
+                />
+              </label>
+              {/* preview file */}
+              {imageFile && (
+                <div className="ml-2 text-xs text-gray-500 flex items-center">
+                  <img src={URL.createObjectURL(imageFile)} alt="preview" className="w-16 h-12 object-contain mr-2 rounded border" />
+                    <span>{imageFile.name}</span>
+                  <button
+                    onClick={() => setImageFile(null)}
+                    type="button"
+                    className="ml-1 text-red-500 hover:text-red-700"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+
+              {/* ปุ่มไมค์/voice (เหมือนเดิม) */}
+              <button
+                type="button"
+                onClick={handleStartListening}
+                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors"
+                aria-label="Use microphone"
+                disabled={isLoading}
+              >
+                <Mic size={20} />
+              </button>
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ask something about PLCnext..."
+                className="flex-1 bg-transparent focus:outline-none px-4 text-gray-800 placeholder-gray-500"
+                disabled={isLoading}
+              />
+              <button
+                type="submit"
+                className="bg-blue-600 text-white p-2.5 rounded-full font-semibold hover:bg-blue-700 transition-colors shadow-sm disabled:bg-blue-300 disabled:cursor-not-allowed flex-shrink-0"
+                disabled={isLoading || (!input.trim() && !imageFile)}
+                aria-label="Send message"
+              >
+                <Send size={20} />
+              </button>
+            </form>
     )}
 
     {/* โหมด Listening (มี Check) */}
