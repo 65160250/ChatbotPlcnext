@@ -4,7 +4,7 @@ import requests
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -14,6 +14,11 @@ from psycopg2 import pool
 
 from app.retriever import PostgresVectorRetriever, EnhancedFlashrankRerankRetriever
 from app.chatbot import answer_question
+
+import numpy as np
+import soundfile as sf
+from faster_whisper import WhisperModel
+import tempfile
 
 # --- Configuration ---
 DB_URL = os.getenv("DATABASE_URL")
@@ -282,6 +287,23 @@ async def root():
             "stats": "/api/stats"
         }
     }
+
+@app.post("/api/transcribe")
+async def transcribe(file: UploadFile = File(...)):
+    # รองรับ webm/mp3/wav
+    import tempfile
+    from faster_whisper import WhisperModel
+
+    suffix = "." + file.filename.split('.')[-1]
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+
+    model = WhisperModel("small.en", device="cpu", compute_type="float32")
+    segments, _ = model.transcribe(tmp_path, language="en", beam_size=1)
+    transcript = "".join([s.text for s in segments])
+    return {"text": transcript}
+
 
 if __name__ == "__main__":
     import uvicorn

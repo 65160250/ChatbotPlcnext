@@ -125,7 +125,15 @@ function App() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null); // <-- state สำหรับ popup
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null); 
+
+  // ------ สำหรับ voice to text ------
+  const [isListening, setIsListening] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  // ----------------------------------
+
   const chatEndRef = useRef(null);
 
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -162,6 +170,51 @@ function App() {
   // ฟังก์ชันสำหรับปุ่มที่ยังไม่ implement จริง
   const handleFeatureNotImplemented = (feature) => {
     alert(`${feature} feature is not implemented yet.`);
+  };
+
+    // 1. เริ่มฟังเสียง
+  const handleStartListening = async () => {
+    setIsListening(true);
+    setIsTranscribing(false);
+    setInput(""); // clear input
+    audioChunksRef.current = [];
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorderRef.current = new window.MediaRecorder(stream, { mimeType: "audio/webm" });
+    mediaRecorderRef.current.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        audioChunksRef.current.push(e.data);
+      }
+    };
+    mediaRecorderRef.current.start();
+  };
+
+  // 2. หยุดฟัง → ส่งไฟล์ไป backend
+  const handleStopListening = async () => {
+    setIsListening(false);
+    setIsTranscribing(true);
+
+    // หยุดบันทึกเสียงและรอ audio
+    mediaRecorderRef.current.stop();
+    mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+
+    // รอให้ ondataavailable ทำงานเสร็จ
+    mediaRecorderRef.current.onstop = async () => {
+      const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+      // ส่งไป backend
+      try {
+        const formData = new FormData();
+        formData.append("file", audioBlob, "audio.webm");
+        const res = await axios.post(`${API_URL}/api/transcribe`, formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+        setInput(res.data.text || "");
+      } catch (err) {
+        setInput("");
+        alert("ถอดเสียงไม่สำเร็จ: " + err.message);
+      } finally {
+        setIsTranscribing(false);
+      }
+    };
   };
 
   const handleNewChat = () => {
@@ -411,50 +464,85 @@ function App() {
           </div>
         </main>
         <footer className="p-4 bg-gray-100/80 backdrop-blur-sm">
-          <div className="max-w-4xl mx-auto">
-            <form
-              onSubmit={handleSendMessage}
-              className="flex items-center space-x-2 bg-white border border-gray-300 rounded-full p-2 shadow-sm focus-within:ring-2 focus-within:ring-blue-500 transition-all"
-            >
-              {/* ปุ่มแนบไฟล์ */}
-              <button
-                type="button"
-                onClick={() => handleFeatureNotImplemented("Attach File")}
-                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors"
-                aria-label="Attach file"
-                disabled={isLoading}
-              >
-                <Paperclip size={20} />
-              </button>
-              {/* ปุ่มไมค์ */}
-              <button
-                type="button"
-                onClick={() => handleFeatureNotImplemented("Microphone")}
-                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors"
-                aria-label="Use microphone"
-                disabled={isLoading}
-              >
-                <Mic size={20} />
-              </button>
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask something about PLCnext..."
-                className="flex-1 bg-transparent focus:outline-none px-4 text-gray-800 placeholder-gray-500"
-                disabled={isLoading}
-              />
-              <button
-                type="submit"
-                className="bg-blue-600 text-white p-2.5 rounded-full font-semibold hover:bg-blue-700 transition-colors shadow-sm disabled:bg-blue-300 disabled:cursor-not-allowed flex-shrink-0"
-                disabled={isLoading || !input.trim()}
-                aria-label="Send message"
-              >
-                <Send size={20} />
-              </button>
-            </form>
-          </div>
-        </footer>
+  <div className="max-w-4xl mx-auto">
+    {/* ฟุตเตอร์ 3 โหมด */}
+    {!isListening && !isTranscribing && (
+      <form
+        onSubmit={handleSendMessage}
+        className="flex items-center space-x-2 bg-white border border-gray-300 rounded-full p-2 shadow-sm focus-within:ring-2 focus-within:ring-blue-500 transition-all"
+      >
+        {/* ปุ่มแนบไฟล์ */}
+        <button
+          type="button"
+          onClick={() => handleFeatureNotImplemented("Attach File")}
+          className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors"
+          aria-label="Attach file"
+          disabled={isLoading}
+        >
+          <Paperclip size={20} />
+        </button>
+        {/* ปุ่มไมค์ "ของจริง" */}
+        <button
+          type="button"
+          onClick={handleStartListening}
+          className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors"
+          aria-label="Use microphone"
+          disabled={isLoading}
+        >
+          <Mic size={20} />
+        </button>
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Ask something about PLCnext..."
+          className="flex-1 bg-transparent focus:outline-none px-4 text-gray-800 placeholder-gray-500"
+          disabled={isLoading}
+        />
+        <button
+          type="submit"
+          className="bg-blue-600 text-white p-2.5 rounded-full font-semibold hover:bg-blue-700 transition-colors shadow-sm disabled:bg-blue-300 disabled:cursor-not-allowed flex-shrink-0"
+          disabled={isLoading || !input.trim()}
+          aria-label="Send message"
+        >
+          <Send size={20} />
+        </button>
+      </form>
+    )}
+
+    {/* โหมด Listening (มี Check) */}
+    {isListening && (
+      <div className="flex items-center space-x-2 bg-blue-50 border border-blue-300 rounded-full p-2 shadow-sm transition-all w-full">
+        <div className="text-blue-600 animate-pulse font-semibold px-2">Listening...</div>
+        <button
+          type="button"
+          onClick={handleStopListening}
+          className="ml-auto bg-green-600 text-white p-2 rounded-full font-semibold hover:bg-green-700 transition"
+          aria-label="Stop and transcribe"
+        >
+          <Check size={24} />
+        </button>
+      </div>
+    )}
+
+    {/* โหมด Transcribing */}
+    {isTranscribing && (
+      <div className="flex items-center space-x-2 bg-gray-50 border border-gray-300 rounded-full p-2 shadow-sm w-full">
+        <div className="flex-1 flex items-center gap-2 px-2 text-gray-600">
+          <span className="animate-spin">🔄</span>
+          Transcribing...
+        </div>
+        <button
+          type="button"
+          className="ml-auto bg-gray-300 text-gray-500 p-2 rounded-full cursor-not-allowed"
+          disabled
+        >
+          <Check size={24} />
+        </button>
+      </div>
+    )}
+  </div>
+</footer>
       </div>
     </div>
   );

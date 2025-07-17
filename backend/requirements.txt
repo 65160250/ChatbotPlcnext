@@ -21,3 +21,11 @@ pypdf
 
 # Utilities
 python-dotenv
+
+#Whisper
+sounddevice
+soundfile
+numpy
+faster-whisper
+torch
+python-multipart
