@@ -1,3 +1,4 @@
+// App.jsx (เวอร์ชันปรับ input/footer UI ให้เหมือน scoozmobiii)
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import {
@@ -11,7 +12,9 @@ import {
   MessageSquareText,
   Trash2,
   Paperclip,
-Mic,
+  Mic,
+  XCircle,
+  LoaderCircle,
 } from "lucide-react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -116,7 +119,110 @@ const Message = ({ text, sender, image }) => {
   );
 };
 
+// ------------- Voice Modal (แบบ scoozmobiii) -------------------
+const VoiceRecorderModal = ({ isOpen, onClose, onTranscriptionComplete }) => {
+  const [status, setStatus] = useState("idle");
+  const [timer, setTimer] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const timerIntervalRef = useRef(null);
+  const streamRef = useRef(null);
 
+  useEffect(() => {
+    if (isOpen) {
+      setStatus("idle");
+      setTimer(0);
+      audioChunksRef.current = [];
+    } else {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (status === "recording") {
+      timerIntervalRef.current = setInterval(() => setTimer(prev => prev + 1), 1000);
+    } else {
+      clearInterval(timerIntervalRef.current);
+      if (status !== "idle") setTimer(0);
+    }
+    return () => clearInterval(timerIntervalRef.current);
+  }, [status]);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      mediaRecorderRef.current.ondataavailable = (event) => audioChunksRef.current.push(event.data);
+      mediaRecorderRef.current.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        onTranscriptionComplete(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+        setStatus('transcribing');
+      };
+      mediaRecorderRef.current.start();
+      setStatus('recording');
+    } catch (err) {
+      alert("Could not access microphone. Please check your browser permissions.");
+      onClose();
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+  };
+  
+  const handleCancel = () => {
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.onstop = null;
+      mediaRecorderRef.current.stop();
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    onClose(); 
+  };
+
+  const formatTime = (seconds) => {
+    const minutes = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const secs = (seconds % 60).toString().padStart(2, '0');
+    return `${minutes}:${secs}`;
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl shadow-xl p-8 text-center w-full max-w-md">
+        <h2 className="text-2xl font-bold mb-4">Voice Input</h2>
+        <p className="text-gray-500 mb-6">
+          {status === 'idle' && 'Click the button to start recording.'}
+          {status === 'recording' && 'Recording... Click to stop.'}
+          {status === 'transcribing' && 'Processing your audio...'}
+        </p>
+        <div className="text-5xl font-mono mb-6">{formatTime(timer)}</div>
+        <button
+          onClick={() => status === 'recording' ? stopRecording() : startRecording()}
+          disabled={status === 'transcribing'}
+          className={`w-20 h-20 rounded-full transition-all duration-300 flex items-center justify-center mx-auto shadow-lg ${status === 'recording' ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'} disabled:bg-gray-400 disabled:cursor-wait`}
+        >
+          {status === 'transcribing' ? <LoaderCircle size={32} className="text-white animate-spin" /> : <Mic size={32} className="text-white" />}
+        </button>
+        <button onClick={handleCancel} className="text-sm text-gray-500 hover:text-gray-800 mt-6" disabled={status === 'transcribing'}>Cancel</button>
+      </div>
+    </div>
+  );
+};
+
+// ------------- Main App -------------------
 function App() {
   const [chatHistory, setChatHistory] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
@@ -125,16 +231,13 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null); 
   const [imageFile, setImageFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
 
-
-  // ------ สำหรับ voice to text ------
-  const [isListening, setIsListening] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-  // ----------------------------------
+  // voice modal state
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
 
   const chatEndRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -167,56 +270,23 @@ function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory, activeChatId]);
 
-  // ฟังก์ชันสำหรับปุ่มที่ยังไม่ implement จริง
-  const handleFeatureNotImplemented = (feature) => {
-    alert(`${feature} feature is not implemented yet.`);
+  // 1. Voice transcription
+  const handleTranscriptionComplete = async (audioBlob) => {
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.webm');
+    try {
+      const res = await axios.post(`${API_URL}/api/transcribe`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setInput((prev) => (prev ? prev + ' ' : '') + (res.data.text || ""));
+    } catch (err) {
+      alert("ถอดเสียงไม่สำเร็จ: " + err.message);
+    } finally {
+      setIsVoiceModalOpen(false);
+    }
   };
 
-    // 1. เริ่มฟังเสียง
-  const handleStartListening = async () => {
-    setIsListening(true);
-    setIsTranscribing(false);
-    setInput(""); // clear input
-    audioChunksRef.current = [];
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorderRef.current = new window.MediaRecorder(stream, { mimeType: "audio/webm" });
-    mediaRecorderRef.current.ondataavailable = (e) => {
-      if (e.data.size > 0) {
-        audioChunksRef.current.push(e.data);
-      }
-    };
-    mediaRecorderRef.current.start();
-  };
-
-  // 2. หยุดฟัง → ส่งไฟล์ไป backend
-  const handleStopListening = async () => {
-    setIsListening(false);
-    setIsTranscribing(true);
-
-    // หยุดบันทึกเสียงและรอ audio
-    mediaRecorderRef.current.stop();
-    mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
-
-    // รอให้ ondataavailable ทำงานเสร็จ
-    mediaRecorderRef.current.onstop = async () => {
-      const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-      // ส่งไป backend
-      try {
-        const formData = new FormData();
-        formData.append("file", audioBlob, "audio.webm");
-        const res = await axios.post(`${API_URL}/api/transcribe`, formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        setInput(res.data.text || "");
-      } catch (err) {
-        setInput("");
-        alert("ถอดเสียงไม่สำเร็จ: " + err.message);
-      } finally {
-        setIsTranscribing(false);
-      }
-    };
-  };
-
+  // 2. New Chat
   const handleNewChat = () => {
     const newChat = {
       id: Date.now().toString(),
@@ -234,17 +304,16 @@ function App() {
     setInput("");
   };
 
+  // 3. Select Chat
   const handleSelectChat = (chatId) => {
     setActiveChatId(chatId);
   };
 
-  // (เปลี่ยนให้แค่ setConfirmDeleteId)
+  // 4. Delete Chat
   const handleDeleteChat = (e, chatIdToDelete) => {
     e.stopPropagation();
     setConfirmDeleteId(chatIdToDelete);
   };
-
-  // ฟังก์ชันที่ใช้เมื่อกดยืนยันลบ (Yes)
   const confirmDeleteChat = () => {
     setChatHistory((prev) =>
       prev.filter((chat) => chat.id !== confirmDeleteId)
@@ -261,323 +330,273 @@ function App() {
     }
     setConfirmDeleteId(null);
   };
-
-  // ฟังก์ชันที่ใช้เมื่อกดไม่ลบ (No)
   const cancelDeleteChat = () => {
     setConfirmDeleteId(null);
   };
 
-  const handleSendMessage = async (e) => {
-  e.preventDefault();
-  if ((!input.trim() && !imageFile) || isLoading || !activeChatId) return;
-
-  const userMessage = {
-    text: input,
-    sender: "user",
-    image: imageFile ? URL.createObjectURL(imageFile) : null,
+  // 5. File preview
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    setImageFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    event.target.value = null;
   };
-  setInput("");
-  setIsLoading(true);
+  const cancelFileSelection = () => {
+    setImageFile(null);
+    setPreviewUrl(null);
+  };
 
-  // push user message ก่อน
-  setChatHistory((prev) => {
-    const newHistory = [...prev];
-    const activeChatIndex = newHistory.findIndex(
-      (chat) => chat.id === activeChatId
-    );
-    if (activeChatIndex !== -1) {
-      newHistory[activeChatIndex].messages.push(userMessage);
-      const userMessages = newHistory[activeChatIndex].messages.filter(
-        (m) => m.sender === "user"
-      );
-      if (userMessages.length === 1) {
-        newHistory[activeChatIndex].title =
-          input.length > 30 ? `${input.substring(0, 27)}...` : input;
-      }
-    }
-    return newHistory;
-  });
+  // 6. Send Message
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if ((!input.trim() && !imageFile) || isLoading || !activeChatId) return;
 
-  try {
-    const formData = new FormData();
-    formData.append("message", input);
-    if (imageFile) {
-      formData.append("file", imageFile);
-    }
+    const userMessage = {
+      text: input,
+      sender: "user",
+      image: previewUrl,
+    };
+    setInput("");
+    setIsLoading(true);
 
-    // ส่งแบบ POST ไปที่ /api/agent-chat
-    const response = await axios.post(
-      `${API_URL}/api/agent-chat`,
-      formData,
-      { headers: { "Content-Type": "multipart/form-data" } }
-    );
-    const botMessage = { text: response.data.answer, sender: "bot" };
+    // push user message ก่อน
     setChatHistory((prev) => {
       const newHistory = [...prev];
       const activeChatIndex = newHistory.findIndex(
         (chat) => chat.id === activeChatId
       );
       if (activeChatIndex !== -1) {
-        newHistory[activeChatIndex].messages.push(botMessage);
+        newHistory[activeChatIndex].messages.push(userMessage);
+        const userMessages = newHistory[activeChatIndex].messages.filter(
+          (m) => m.sender === "user"
+        );
+        if (userMessages.length === 1) {
+          newHistory[activeChatIndex].title =
+            input.length > 30 ? `${input.substring(0, 27)}...` : input;
+        }
       }
       return newHistory;
     });
-  } catch (error) {
-    const errorMessageText =
-      error.response?.data?.detail ||
-      "Sorry, there was an error connecting to the server.";
-    const errorMessage = { text: errorMessageText, sender: "bot" };
-    setChatHistory((prev) => {
-      const newHistory = [...prev];
-      const activeChatIndex = newHistory.findIndex(
-        (chat) => chat.id === activeChatId
-      );
-      if (activeChatIndex !== -1) {
-        newHistory[activeChatIndex].messages.push(errorMessage);
-      }
-      return newHistory;
-    });
-  } finally {
-    setIsLoading(false);
-    setImageFile(null); // ล้างไฟล์หลังส่ง
-  }
-};
 
+    try {
+      const formData = new FormData();
+      formData.append("message", input);
+      if (imageFile) {
+        formData.append("file", imageFile);
+      }
+      const response = await axios.post(
+        `${API_URL}/api/agent-chat`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+      const botMessage = { text: response.data.answer, sender: "bot" };
+      setChatHistory((prev) => {
+        const newHistory = [...prev];
+        const activeChatIndex = newHistory.findIndex(
+          (chat) => chat.id === activeChatId
+        );
+        if (activeChatIndex !== -1) {
+          newHistory[activeChatIndex].messages.push(botMessage);
+        }
+        return newHistory;
+      });
+    } catch (error) {
+      const errorMessageText =
+        error.response?.data?.detail ||
+        "Sorry, there was an error connecting to the server.";
+      const errorMessage = { text: errorMessageText, sender: "bot" };
+      setChatHistory((prev) => {
+        const newHistory = [...prev];
+        const activeChatIndex = newHistory.findIndex(
+          (chat) => chat.id === activeChatId
+        );
+        if (activeChatIndex !== -1) {
+          newHistory[activeChatIndex].messages.push(errorMessage);
+        }
+        return newHistory;
+      });
+    } finally {
+      setIsLoading(false);
+      setImageFile(null);
+      setPreviewUrl(null);
+    }
+  };
 
   const activeChat = chatHistory.find((chat) => chat.id === activeChatId);
   const messagesToDisplay = activeChat ? activeChat.messages : [];
 
   return (
-    <div className="flex h-screen bg-white text-gray-800 font-sans">
-      {/* Sidebar */}
-      <aside
-        className={`bg-gray-50 border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out ${
-          isSidebarOpen ? "w-72 p-4" : "w-0 p-0"
-        }`}
-      >
-        <div
-          className={`flex-shrink-0 mb-4 flex items-center justify-between overflow-hidden transition-opacity duration-200 ${
-            isSidebarOpen ? "opacity-100" : "opacity-0"
+    <>
+      <VoiceRecorderModal
+        isOpen={isVoiceModalOpen}
+        onClose={() => setIsVoiceModalOpen(false)}
+        onTranscriptionComplete={handleTranscriptionComplete}
+      />
+      <div className="flex h-screen bg-white text-gray-800 font-sans">
+        {/* Sidebar */}
+        <aside
+          className={`bg-gray-50 border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out ${
+            isSidebarOpen ? "w-72 p-4" : "w-0 p-0"
           }`}
         >
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-600 p-1 rounded-full">
-              <img
-                src="/src/assets/logo.png"
-                alt="PLCnext Logo"
-                className="w-10 h-10 object-cover rounded-full border-2 border-white shadow"
-              />
-            </div>
-            <h1 className="text-xl font-bold text-gray-900">Panya</h1>
-          </div>
-        </div>
-
-        <button
-          className={`flex items-center justify-center gap-2 w-full p-2.5 mb-4 bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors text-sm font-semibold mx-auto overflow-hidden ${
-            isSidebarOpen ? "opacity-100" : "opacity-0"
-          }`}
-          onClick={handleNewChat}
-        >
-          <Plus size={18} /> New Chat
-        </button>
-
-        {/* Chat History List */}
-        <div
-          className={`flex-1 overflow-y-auto space-y-2 transition-opacity duration-200 ${
-            isSidebarOpen ? "opacity-100" : "opacity-0"
-          }`}
-        >
-          {chatHistory.map((chat) => (
-            <div
-              key={chat.id}
-              onClick={() => handleSelectChat(chat.id)}
-              className={`group relative flex items-center justify-between w-full p-2.5 rounded-lg cursor-pointer transition-colors ${
-                activeChatId === chat.id
-                  ? "bg-blue-100 text-blue-800"
-                  : "hover:bg-gray-200"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <MessageSquareText size={16} className="text-gray-500" />
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium truncate w-40">
-                    {chat.title}
-                  </span>
-                  <span className="text-xs text-gray-400">
-                    {timeAgo(chat.createdAt)}
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={(e) => handleDeleteChat(e, chat.id)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-          ))}
-        </div>
-        {/* --- Pop up ยืนยันการลบแชท --- */}
-        {confirmDeleteId && (
-          <div className="fixed inset-0 z-40 bg-black bg-opacity-40 flex items-center justify-center">
-            <div className="bg-white rounded-lg shadow-xl p-6 w-80 flex flex-col items-center">
-              <p className="text-lg font-semibold text-gray-800 mb-4 text-center">
-                คุณต้องการลบแชทนี้หรือไม่?
-              </p>
-              <div className="flex gap-4">
-                <button
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
-                  onClick={confirmDeleteChat}
-                >
-                  ใช่, ลบ
-                </button>
-                <button
-                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded"
-                  onClick={cancelDeleteChat}
-                >
-                  ไม่ลบ
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </aside>
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col bg-gray-100">
-        <header className="flex items-center p-2 bg-white border-b border-gray-200 shadow-sm">
-          <button
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+          <div
+            className={`flex-shrink-0 mb-4 flex items-center justify-between overflow-hidden transition-opacity duration-200 ${
+              isSidebarOpen ? "opacity-100" : "opacity-0"
+            }`}
           >
-            <PanelLeft size={20} />
-          </button>
-          <h2 className="ml-2 font-semibold text-gray-700">
-            {activeChat?.title || "Smart Assistant"}
-          </h2>
-        </header>
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-600 p-1 rounded-full">
+                <img
+                  src="/src/assets/logo.png"
+                  alt="PLCnext Logo"
+                  className="w-10 h-10 object-cover rounded-full border-2 border-white shadow"
+                />
+              </div>
+              <h1 className="text-xl font-bold text-gray-900">Panya</h1>
+            </div>
+          </div>
 
-        <main className="flex-1 p-6 overflow-y-auto">
-          <div className="max-w-4xl mx-auto">
-            {messagesToDisplay.map((msg, index) => (
-              <Message key={index} text={msg.text} sender={msg.sender} image={msg.image}/>
-            ))}
-            {isLoading && (
-              <div className="flex items-start gap-3 my-4">
-                <div className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-gray-700 text-white">
-                  <Bot size={20} />
-                </div>
-                <div className="max-w-lg px-5 py-4 rounded-xl shadow-sm bg-white border">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse [animation-delay:-0.3s]"></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse [animation-delay:-0.15s]"></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
+          <button
+            className={`flex items-center justify-center gap-2 w-full p-2.5 mb-4 bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors text-sm font-semibold mx-auto overflow-hidden ${
+              isSidebarOpen ? "opacity-100" : "opacity-0"
+            }`}
+            onClick={handleNewChat}
+          >
+            <Plus size={18} /> New Chat
+          </button>
+
+          {/* Chat History List */}
+          <div
+            className={`flex-1 overflow-y-auto space-y-2 transition-opacity duration-200 ${
+              isSidebarOpen ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            {chatHistory.map((chat) => (
+              <div
+                key={chat.id}
+                onClick={() => handleSelectChat(chat.id)}
+                className={`group relative flex items-center justify-between w-full p-2.5 rounded-lg cursor-pointer transition-colors ${
+                  activeChatId === chat.id
+                    ? "bg-blue-100 text-blue-800"
+                    : "hover:bg-gray-200"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <MessageSquareText size={16} className="text-gray-500" />
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium truncate w-40">
+                      {chat.title}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {timeAgo(chat.createdAt)}
+                    </span>
                   </div>
                 </div>
+                <button
+                  onClick={(e) => handleDeleteChat(e, chat.id)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Trash2 size={16} />
+                </button>
               </div>
-            )}
-            <div ref={chatEndRef} />
+            ))}
           </div>
-        </main>
-        <footer className="p-4 bg-gray-100/80 backdrop-blur-sm">
-  <div className="max-w-4xl mx-auto">
-    {/* ฟุตเตอร์ 3 โหมด */}
-    {!isListening && !isTranscribing && (
-      <form
-              onSubmit={handleSendMessage}
-              className="flex items-center space-x-2 bg-white border border-gray-300 rounded-full p-2 shadow-sm focus-within:ring-2 focus-within:ring-blue-500 transition-all"
-            >
-              {/* ปุ่มแนบไฟล์ (image เท่านั้น) */}
-              <label className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors cursor-pointer">
-                <Paperclip size={20} />
-                <input
-                  type="file"
-                  accept="image/*"
-                  style={{ display: "none" }}
-                  onChange={e => {
-                    if (e.target.files[0]) setImageFile(e.target.files[0]);
-                  }}
-                  disabled={isLoading}
-                />
-              </label>
-              {/* preview file */}
-              {imageFile && (
-                <div className="ml-2 text-xs text-gray-500 flex items-center">
-                  <img src={URL.createObjectURL(imageFile)} alt="preview" className="w-16 h-12 object-contain mr-2 rounded border" />
-                    <span>{imageFile.name}</span>
+          {/* --- Pop up ยืนยันการลบแชท --- */}
+          {confirmDeleteId && (
+            <div className="fixed inset-0 z-40 bg-black bg-opacity-40 flex items-center justify-center">
+              <div className="bg-white rounded-lg shadow-xl p-6 w-80 flex flex-col items-center">
+                <p className="text-lg font-semibold text-gray-800 mb-4 text-center">
+                  คุณต้องการลบแชทนี้หรือไม่?
+                </p>
+                <div className="flex gap-4">
                   <button
-                    onClick={() => setImageFile(null)}
-                    type="button"
-                    className="ml-1 text-red-500 hover:text-red-700"
+                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+                    onClick={confirmDeleteChat}
                   >
-                    ×
+                    ใช่, ลบ
+                  </button>
+                  <button
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded"
+                    onClick={cancelDeleteChat}
+                  >
+                    ไม่ลบ
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+        </aside>
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col bg-gray-100">
+          <header className="flex items-center p-2 bg-white border-b border-gray-200 shadow-sm">
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+            >
+              <PanelLeft size={20} />
+            </button>
+            <h2 className="ml-2 font-semibold text-gray-700">
+              {activeChat?.title || "Smart Assistant"}
+            </h2>
+          </header>
+
+          <main className="flex-1 p-6 overflow-y-auto">
+            <div className="max-w-4xl mx-auto">
+              {messagesToDisplay.map((msg, index) => (
+                <Message key={index} text={msg.text} sender={msg.sender} image={msg.image}/>
+              ))}
+              {isLoading && (
+                <div className="flex items-start gap-3 my-4">
+                  <div className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-gray-700 text-white">
+                    <Bot size={20} />
+                  </div>
+                  <div className="max-w-lg px-5 py-4 rounded-xl shadow-sm bg-white border">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse [animation-delay:-0.3s]"></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse [animation-delay:-0.15s]"></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
+                    </div>
+                  </div>
+                </div>
               )}
-
-              {/* ปุ่มไมค์/voice (เหมือนเดิม) */}
-              <button
-                type="button"
-                onClick={handleStartListening}
-                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors"
-                aria-label="Use microphone"
-                disabled={isLoading}
-              >
-                <Mic size={20} />
-              </button>
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask something about PLCnext..."
-                className="flex-1 bg-transparent focus:outline-none px-4 text-gray-800 placeholder-gray-500"
-                disabled={isLoading}
-              />
-              <button
-                type="submit"
-                className="bg-blue-600 text-white p-2.5 rounded-full font-semibold hover:bg-blue-700 transition-colors shadow-sm disabled:bg-blue-300 disabled:cursor-not-allowed flex-shrink-0"
-                disabled={isLoading || (!input.trim() && !imageFile)}
-                aria-label="Send message"
-              >
-                <Send size={20} />
-              </button>
-            </form>
-    )}
-
-    {/* โหมด Listening (มี Check) */}
-    {isListening && (
-      <div className="flex items-center space-x-2 bg-blue-50 border border-blue-300 rounded-full p-2 shadow-sm transition-all w-full">
-        <div className="text-blue-600 animate-pulse font-semibold px-2">Listening...</div>
-        <button
-          type="button"
-          onClick={handleStopListening}
-          className="ml-auto bg-green-600 text-white p-2 rounded-full font-semibold hover:bg-green-700 transition"
-          aria-label="Stop and transcribe"
-        >
-          <Check size={24} />
-        </button>
-      </div>
-    )}
-
-    {/* โหมด Transcribing */}
-    {isTranscribing && (
-      <div className="flex items-center space-x-2 bg-gray-50 border border-gray-300 rounded-full p-2 shadow-sm w-full">
-        <div className="flex-1 flex items-center gap-2 px-2 text-gray-600">
-          <span className="animate-spin">🔄</span>
-          Transcribing...
+              <div ref={chatEndRef} />
+            </div>
+          </main>
+          {/* Footer/INPUT bar: ใช้โค้ดสไตล์ scoozmobiii */}
+          <footer className="p-4 bg-gray-100/80 backdrop-blur-sm">
+            <div className="max-w-4xl mx-auto">
+              <div className={`bg-white border border-gray-300 shadow-sm focus-within:ring-2 focus-within:ring-blue-400 ${previewUrl ? 'rounded-2xl' : 'rounded-full'}`}>
+                <form onSubmit={handleSendMessage} className="p-2">
+                  {previewUrl && (
+                    <div className="relative w-28 h-28 m-2 p-1 border rounded-lg bg-gray-100">
+                      <img src={previewUrl} alt="Preview" className="w-full h-full object-contain rounded-md" />
+                      <button onClick={cancelFileSelection} className="absolute -top-2 -right-2 bg-gray-600 text-white rounded-full p-0.5 hover:bg-red-500 transition-colors" type="button">
+                        <XCircle size={20} />
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex items-center space-x-2">
+                    <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" accept="image/*" />
+                    <button type="button" onClick={() => fileInputRef.current.click()} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Attach file" disabled={isLoading}><Paperclip size={20} /></button>
+                    <button type="button" onClick={() => setIsVoiceModalOpen(true)} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Use microphone" disabled={isLoading}><Mic size={20} /></button>
+                    <input
+                      type="text"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder="Ask something about PLCnext..."
+                      className="flex-1 bg-transparent focus:outline-none px-2 text-gray-800 placeholder-gray-500"
+                      disabled={isLoading}
+                    />
+                    <button type="submit" className="bg-blue-600 text-white p-2.5 rounded-full font-semibold hover:bg-blue-700 shadow-sm disabled:bg-blue-300 disabled:cursor-not-allowed flex-shrink-0" disabled={isLoading || (!input.trim() && !imageFile)} aria-label="Send message"><Send size={20} /></button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </footer>
         </div>
-        <button
-          type="button"
-          className="ml-auto bg-gray-300 text-gray-500 p-2 rounded-full cursor-not-allowed"
-          disabled
-        >
-          <Check size={24} />
-        </button>
       </div>
-    )}
-  </div>
-</footer>
-      </div>
-    </div>
+    </>
   );
 }
 
