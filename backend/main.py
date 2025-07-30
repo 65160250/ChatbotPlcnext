@@ -24,6 +24,8 @@ import pytesseract
 from PIL import Image
 import io
 
+from agent_pipeline import pipeline  # import pipeline ที่เราสร้างไว้
+import mimetypes
 
 # --- Configuration ---
 DB_URL = os.getenv("DATABASE_URL")
@@ -335,7 +337,27 @@ async def chat_image(
     )
     return ChatResponse(**result)
 
+@app.post("/api/agent-chat")
+async def agent_chat(
+    message: str = Form(""),
+    file: UploadFile = File(None)
+):
+    # เตรียม state สำหรับ pipeline
+    state = {"user_input": message}
+    if file:
+        content = await file.read()
+        mime_type, _ = mimetypes.guess_type(file.filename)
+        if mime_type and mime_type.startswith("image"):
+            state["image_bytes"] = content
+        elif mime_type and mime_type.startswith("audio"):
+            state["audio_bytes"] = content
+        else:
+            return {"error": "File type not supported"}
+    result = pipeline.invoke(state)
+    return {"answer": result.get("llm_answer", "")}
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=5000)
+
+

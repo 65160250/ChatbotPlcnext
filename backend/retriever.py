@@ -48,6 +48,7 @@ class PostgresVectorRetriever(BaseRetriever):
         finally:
             self.connection_pool.putconn(conn)
 
+
 class EnhancedFlashrankRerankRetriever(BaseRetriever):
     """เพิ่ม Domain-specific Boosting"""
     base_retriever: BaseRetriever = Field(...)
@@ -57,14 +58,24 @@ class EnhancedFlashrankRerankRetriever(BaseRetriever):
     def _calculate_domain_boost(self, doc: Document, query: str) -> float:
         boost = 0.0
         content_lower = doc.page_content.lower()
-        
+
+        # เดิม
         plcnext_terms = ["plcnext", "phoenix contact", "gds", "esm", "profinet", "axc f"]
         term_matches = sum(1 for term in plcnext_terms if term in content_lower)
         boost += term_matches * 0.1
-        
+
         if any(phrase in content_lower for phrase in query.lower().split()):
             boost += 0.3
-            
+
+        # **เพิ่ม block สำหรับ protocol/mode**
+        protocol_keywords = [
+            "protocol", "mode", "rs-485", "profinet", "ethernet",
+            "serial", "communication", "modbus", "tcp", "udp", "interface"
+        ]
+        protocol_matches = sum(1 for kw in protocol_keywords if kw in content_lower)
+        if protocol_matches > 0:
+            boost += protocol_matches * 0.5  # ให้คะแนนสูงขึ้นเมื่อเจอ protocol/mode
+
         return boost
 
     def _get_relevant_documents(self, query: str) -> List[Document]:

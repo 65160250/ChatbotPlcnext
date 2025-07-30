@@ -34,6 +34,8 @@ services:
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000", "--reload"]
     volumes:
       - ./backend:/app
+      - D:/65160250/NSC/plc_data/data/raw:/app/data/raw
+      - D:/65160250/NSC/plc_data/data/Knowledge:/app/data/Knowledge
     ports:
       - "5000:5000"
     environment:

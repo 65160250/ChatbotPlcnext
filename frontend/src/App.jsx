@@ -268,81 +268,81 @@ function App() {
   };
 
   const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading || !activeChatId) return;
+  e.preventDefault();
+  if ((!input.trim() && !imageFile) || isLoading || !activeChatId) return;
 
-    const userMessage = {
-      text: input,
-      sender: "user",
-      image: imageFile ? URL.createObjectURL(imageFile) : null,
-    };
-    setInput("");
-    setIsLoading(true);
+  const userMessage = {
+    text: input,
+    sender: "user",
+    image: imageFile ? URL.createObjectURL(imageFile) : null,
+  };
+  setInput("");
+  setIsLoading(true);
 
-    // push user message ก่อน
+  // push user message ก่อน
+  setChatHistory((prev) => {
+    const newHistory = [...prev];
+    const activeChatIndex = newHistory.findIndex(
+      (chat) => chat.id === activeChatId
+    );
+    if (activeChatIndex !== -1) {
+      newHistory[activeChatIndex].messages.push(userMessage);
+      const userMessages = newHistory[activeChatIndex].messages.filter(
+        (m) => m.sender === "user"
+      );
+      if (userMessages.length === 1) {
+        newHistory[activeChatIndex].title =
+          input.length > 30 ? `${input.substring(0, 27)}...` : input;
+      }
+    }
+    return newHistory;
+  });
+
+  try {
+    const formData = new FormData();
+    formData.append("message", input);
+    if (imageFile) {
+      formData.append("file", imageFile);
+    }
+
+    // ส่งแบบ POST ไปที่ /api/agent-chat
+    const response = await axios.post(
+      `${API_URL}/api/agent-chat`,
+      formData,
+      { headers: { "Content-Type": "multipart/form-data" } }
+    );
+    const botMessage = { text: response.data.answer, sender: "bot" };
     setChatHistory((prev) => {
       const newHistory = [...prev];
       const activeChatIndex = newHistory.findIndex(
         (chat) => chat.id === activeChatId
       );
       if (activeChatIndex !== -1) {
-        newHistory[activeChatIndex].messages.push(userMessage);
-        const userMessages = newHistory[activeChatIndex].messages.filter(
-          (m) => m.sender === "user"
-        );
-        if (userMessages.length === 1) {
-          newHistory[activeChatIndex].title =
-            input.length > 30 ? `${input.substring(0, 27)}...` : input;
-        }
+        newHistory[activeChatIndex].messages.push(botMessage);
       }
       return newHistory;
     });
-
-    try {
-      let response;
-      if (imageFile) {
-        const formData = new FormData();
-        formData.append("file", imageFile);
-        formData.append("message", input);
-        response = await axios.post(
-          `${API_URL}/api/chat-image`,
-          formData,
-          { headers: { "Content-Type": "multipart/form-data" } }
-        );
-      } else {
-        response = await axios.post(`${API_URL}/api/chat`, { message: input });
+  } catch (error) {
+    const errorMessageText =
+      error.response?.data?.detail ||
+      "Sorry, there was an error connecting to the server.";
+    const errorMessage = { text: errorMessageText, sender: "bot" };
+    setChatHistory((prev) => {
+      const newHistory = [...prev];
+      const activeChatIndex = newHistory.findIndex(
+        (chat) => chat.id === activeChatId
+      );
+      if (activeChatIndex !== -1) {
+        newHistory[activeChatIndex].messages.push(errorMessage);
       }
-      const botMessage = { text: response.data.reply, sender: "bot" };
-      setChatHistory((prev) => {
-        const newHistory = [...prev];
-        const activeChatIndex = newHistory.findIndex(
-          (chat) => chat.id === activeChatId
-        );
-        if (activeChatIndex !== -1) {
-          newHistory[activeChatIndex].messages.push(botMessage);
-        }
-        return newHistory;
-      });
-    } catch (error) {
-      const errorMessageText =
-        error.response?.data?.detail ||
-        "Sorry, there was an error connecting to the server.";
-      const errorMessage = { text: errorMessageText, sender: "bot" };
-      setChatHistory((prev) => {
-        const newHistory = [...prev];
-        const activeChatIndex = newHistory.findIndex(
-          (chat) => chat.id === activeChatId
-        );
-        if (activeChatIndex !== -1) {
-          newHistory[activeChatIndex].messages.push(errorMessage);
-        }
-        return newHistory;
-      });
-    } finally {
-      setIsLoading(false);
-      setImageFile(null); // ล้างไฟล์หลังส่ง
-    }
-  };
+      return newHistory;
+    });
+  } finally {
+    setIsLoading(false);
+    setImageFile(null); // ล้างไฟล์หลังส่ง
+  }
+};
+
 
   const activeChat = chatHistory.find((chat) => chat.id === activeChatId);
   const messagesToDisplay = activeChat ? activeChat.messages : [];

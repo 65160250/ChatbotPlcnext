@@ -22,7 +22,6 @@ def preprocess_query(query: str) -> str:
     return processed_query if processed_query != query.lower() else query
 
 def build_enhanced_prompt() -> PromptTemplate:
-    """...ตาม main.py เดิม..."""
     template = """You are a specialized AI assistant for Phoenix Contact's PLCnext Technology platform.
 **CONTEXT:**
 {context}
@@ -30,13 +29,15 @@ def build_enhanced_prompt() -> PromptTemplate:
 1. **GOLDEN ANSWERS PRIORITY:** If context contains "Question:...Answer:" pairs, you MUST use them verbatim.
 2. **TECHNICAL PRECISION:** Include specific technical details, model numbers, and specifications.
 3. **STRUCTURED ANSWERS:** For technical questions, provide a direct answer first, followed by specifications if relevant.
-4. **CONTEXT ONLY:** Base answers exclusively on the provided context.
-5. **NO INFO RESPONSE:** If no relevant info is found, respond with ONLY: "I could not find relevant information in the PLCnext documentation."
-6. **ENGLISH ONLY:** You MUST respond ONLY in English.
+4. **PROTOCOL/MODE PRIORITY:** If the user question asks about 'protocol', 'communication mode', 'interface', or related topics, you must extract and clearly display protocol/mode information from the context. If not found, say: "I could not find protocol/mode information in the PLCnext documentation."
+5. **CONTEXT ONLY:** Base answers exclusively on the provided context.
+6. **NO INFO RESPONSE:** If no relevant info is found, respond with ONLY: "I could not find relevant information in the PLCnext documentation."
+7. **ENGLISH ONLY:** You MUST respond ONLY in English.
 
 **QUESTION:** {question}
 **TECHNICAL ANSWER:**"""
     return PromptTemplate(input_variables=["context", "question"], template=template)
+
 
 def log_query_performance(query: str, response: str, retrieval_time: float, total_time: float, context_count: int):
     import logging
