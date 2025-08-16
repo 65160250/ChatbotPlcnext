@@ -342,6 +342,7 @@ async def agent_chat(
     message: str = Form(""),
     file: UploadFile = File(None)
 ):
+    import time
     # เตรียม state สำหรับ pipeline
     state = {"user_input": message}
     if file:
@@ -353,8 +354,19 @@ async def agent_chat(
             state["audio_bytes"] = content
         else:
             return {"error": "File type not supported"}
+    start_time = time.perf_counter()
     result = pipeline.invoke(state)
-    return {"answer": result.get("llm_answer", "")}
+    total_time = time.perf_counter() - start_time
+
+    # ดึงค่าต่างๆ จาก state
+    return {
+        "reply": result.get("llm_answer", ""),
+        "processing_time": result.get("processing_time", total_time),
+        "retrieval_time": result.get("retrieval_time", None),
+        "context_count": result.get("context_count", None),
+        # อยากเพิ่ม field อื่นใส่เพิ่มได้เลย เช่น
+        # "pipeline_trace": result.get("pipeline_trace", None),
+    }
 
 if __name__ == "__main__":
     import uvicorn
