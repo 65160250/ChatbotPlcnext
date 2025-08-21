@@ -1,39 +1,38 @@
-# FastAPI and Server
-fastapi
-uvicorn[standard]
+# ---- FastAPI
+fastapi==0.111.0
+uvicorn==0.30.1
+httptools==0.6.4
 
-# Database and Vector
-psycopg2-binary
-pgvector
+# ---- DB & Vector
+psycopg2-binary==2.9.9
+pgvector==0.2.5
 
-# LangChain and AI
-langchain
+# ---- LangChain stack
 langchain-community
-langchain-ollama
-langchain-core
+langchain-ollama>=0.1.0
+langgraph
+flashrank
 sentence-transformers
 requests
-flashrank
-langgraph
 
-# Document Loaders
+# ---- Loaders & utils
 langchain-docling
 pypdf
-
-# Utilities
 python-dotenv
-
-# Whisper
-sounddevice
-soundfile
-numpy
-faster-whisper
-torch
 python-multipart
 
-# OCR
+# ---- Whisper
+faster-whisper
+soundfile
+
+# ---- OCR
 pytesseract
 Pillow
 
+# ---- RAGAS & friends
+ragas==0.1.17
+datasets>=2.19.0
+pandas>=2.1
+tqdm
 
-
+langchain-openai>=0.2.0

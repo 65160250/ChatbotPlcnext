@@ -1,23 +1,23 @@
-version: '3.8'
-
 services:
-  # Service สำหรับฐานข้อมูล PostgreSQL
   postgres:
-    image: pgvector/pgvector:pg16 # แนะนำให้ใช้เวอร์ชันที่เจาะจงเพื่อความเสถียร
+    image: pgvector/pgvector:pg16
     container_name: plcnext-chatbot-postgres-1
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: plcnextdb
     volumes:
-      - plcnext-data:/var/lib/postgresql/data # เก็บข้อมูลฐานข้อมูลอย่างถาวร
-      # --- บรรทัดที่สำคัญที่สุดที่ต้องเพิ่มเข้ามา ---
-      - ./pgvector-init:/docker-entrypoint-initdb.d # รันสคริปต์ init.sql ตอนสร้างครั้งแรก
+      - plcnext-data:/var/lib/postgresql/data
+      - ./pgvector-init:/docker-entrypoint-initdb.d
     ports:
       - "5432:5432"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d plcnextdb || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
-  # Service สำหรับ LLM Server
   ollama:
     image: ollama/ollama:latest
     container_name: plcnext-chatbot-ollama-1
@@ -26,40 +26,59 @@ services:
     ports:
       - "11434:11434"
     restart: unless-stopped
+    # ใช้คำสั่งของ ollama เอง แทน curl (บางอิมเมจไม่มี curl ทำให้ unhealthy)
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
 
-  # Service สำหรับ Backend (API)
   backend:
     build: ./backend
     container_name: plcnext-chatbot-backend-1
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000", "--reload"]
+    command: ["uvicorn","main:app","--host","0.0.0.0","--port","5000","--loop","asyncio"]
+    environment:
+      DATABASE_URL: postgresql://user:password@postgres:5432/plcnextdb
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: llama3.2
+      EMBED_MODEL: BAAI/bge-m3
+      UVICORN_LOOP: asyncio
+      ANYIO_BACKEND: asyncio
+      # ตั้งให้ไม่ใช้ LLM judge ป้องกัน error api_key
+      RAGAS_NO_LLM: "0"
+      RAGAS_JUDGE_MODEL: "gpt-4o-mini"
+      EVAL_EMBED_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
+      EVAL_WITH_RAGAS: "true"
+      OPENAI_API_KEY: ${OPENAI_API_KEY} 
+      
     volumes:
       - ./backend:/app
-      - D:/65160250/NSC/plc_data/data/raw:/app/data/raw
-      - D:/65160250/NSC/plc_data/data/Knowledge:/app/data/Knowledge
+      - "D:/65160250/NSC/plc_data/data/raw:/app/data/raw"
+      - "D:/65160250/NSC/plc_data/data/Knowledge:/app/data/Knowledge"
     ports:
       - "5000:5000"
-    environment:
-      - DATABASE_URL=postgresql://user:password@postgres:5432/plcnextdb
-      - OLLAMA_BASE_URL=http://ollama:11434
     restart: unless-stopped
     depends_on:
-      - postgres
-      - ollama
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
 
-  # Service สำหรับ Frontend (UI)
   frontend:
     build: ./frontend
     container_name: plcnext-chatbot-frontend-1
+    environment:
+      VITE_API_URL: http://localhost:5000
     ports:
-      - "5173:5173" # ถูกต้องสำหรับ Vite Dev Server
+      - "5173:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_started
 
-# ประกาศ Volumes ที่จะใช้เก็บข้อมูลอย่างถาวร
 volumes:
   plcnext-data:
   ollama_data:

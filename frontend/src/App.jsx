@@ -1,4 +1,4 @@
-// App.jsx (เวอร์ชันปรับ input/footer UI ให้เหมือน scoozmobiii)
+// App.jsx (fixed: null-safe render + use reply field from backend)
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import {
@@ -66,15 +66,17 @@ const CodeBlock = ({ language, value }) => {
           padding: "1rem",
         }}
       >
-        {String(value).trim()}
+        {String(value ?? "").trim()}
       </SyntaxHighlighter>
     </div>
   );
 };
 
 const MessageContent = ({ text }) => {
+  // ทำให้ปลอดภัยเสมอ (ไม่ให้ undefined/null มาพัง .split)
+  const safeText = String(text ?? "");
   const codeBlockRegex = /```(\w+)?\n([\s\S]+?)\n```/g;
-  const parts = text.split(codeBlockRegex);
+  const parts = safeText.split(codeBlockRegex);
 
   return (
     <div>
@@ -119,7 +121,7 @@ const Message = ({ text, sender, image }) => {
   );
 };
 
-// ------------- Voice Modal (แบบ scoozmobiii) -------------------
+// ------------- Voice Modal -------------------
 const VoiceRecorderModal = ({ isOpen, onClose, onTranscriptionComplete }) => {
   const [status, setStatus] = useState("idle");
   const [timer, setTimer] = useState(0);
@@ -350,10 +352,11 @@ function App() {
   // 6. Send Message
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if ((!input.trim() && !imageFile) || isLoading || !activeChatId) return;
+    const userText = input.trim();
+    if ((!userText && !imageFile) || isLoading || !activeChatId) return;
 
     const userMessage = {
-      text: input,
+      text: userText,
       sender: "user",
       image: previewUrl,
     };
@@ -373,7 +376,7 @@ function App() {
         );
         if (userMessages.length === 1) {
           newHistory[activeChatIndex].title =
-            input.length > 30 ? `${input.substring(0, 27)}...` : input;
+            userText.length > 30 ? `${userText.substring(0, 27)}...` : userText;
         }
       }
       return newHistory;
@@ -381,7 +384,7 @@ function App() {
 
     try {
       const formData = new FormData();
-      formData.append("message", input);
+      formData.append("message", userText);
       if (imageFile) {
         formData.append("file", imageFile);
       }
@@ -390,7 +393,18 @@ function App() {
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
-      const botMessage = { text: response.data.answer, sender: "bot" };
+
+      // ✅ ใช้ 'reply' จาก backend (fallback เผื่อมีเวอร์ชันเก่า)
+      const botText =
+        typeof response.data?.reply === "string"
+          ? response.data.reply
+          : typeof response.data?.answer === "string"
+          ? response.data.answer
+          : "";
+
+      const botMessage = { text: (response.data.reply ?? response.data.answer ?? ""), sender: "bot" };
+
+
       setChatHistory((prev) => {
         const newHistory = [...prev];
         const activeChatIndex = newHistory.findIndex(
@@ -563,7 +577,7 @@ function App() {
               <div ref={chatEndRef} />
             </div>
           </main>
-          {/* Footer/INPUT bar: ใช้โค้ดสไตล์ scoozmobiii */}
+          {/* Footer/INPUT bar */}
           <footer className="p-4 bg-gray-100/80 backdrop-blur-sm">
             <div className="max-w-4xl mx-auto">
               <div className={`bg-white border border-gray-300 shadow-sm focus-within:ring-2 focus-within:ring-blue-400 ${previewUrl ? 'rounded-2xl' : 'rounded-full'}`}>

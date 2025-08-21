@@ -48,6 +48,7 @@ class AgentState(TypedDict):
     retrieval_time: Optional[float]
     context_count: Optional[int]
     processing_time: Optional[float]
+    contexts_list: Optional[list[str]]
 
 # === NODES ===
 
@@ -79,7 +80,6 @@ def audio2text_node(state, config=None):
     return {"user_input": transcript}
 
 def retrieval_node(state, config=None):
-    """ค้นหา context ที่เกี่ยวข้อง และคืนเวลาและจำนวน context"""
     question = state["user_input"]
     start = time.perf_counter()
     base_retriever = PostgresVectorRetriever(
@@ -89,15 +89,21 @@ def retrieval_node(state, config=None):
     )
     reranker = EnhancedFlashrankRerankRetriever(base_retriever=base_retriever)
     docs = reranker.invoke(question)
-    context = "\n\n".join([doc.page_content for doc in docs])
+
+    contexts_list = [d.page_content for d in docs]     # << เพิ่ม
+    context = "\n\n".join(contexts_list)
     retrieval_time = time.perf_counter() - start
     context_count = len(docs)
+
     return {
         "context": context,
+        "contexts_list": contexts_list,                # << เพิ่ม
         "retrieval_time": retrieval_time,
         "context_count": context_count,
-        "user_input": question  # เผื่อถูกใช้ใน LLM node
+        "user_input": question
     }
+
+
 
 def llm_node(state, config=None):
     """ตอบคำถามด้วย LLM พร้อมจับเวลา"""
