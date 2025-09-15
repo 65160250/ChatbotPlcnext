@@ -422,12 +422,13 @@ async def chat(fastapi_request: Request, chat_request: ChatRequest):
         ragas_payload = {"status": "skipped", "reason": str(e)}
 
     return ChatResponse(
-        reply=result["reply"],
-        processing_time=result.get("processing_time"),
-        retrieval_time=result.get("retrieval_time"),
-        context_count=result.get("context_count"),
-        ragas=ragas_payload
-    )
+    reply=result["reply"],
+    processing_time=result.get("processing_time"),
+    retrieval_time=result.get("retrieval_time"),
+    context_count=result.get("context_count"),
+    ragas=sanitize_json(ragas_payload) if ragas_payload else None
+)
+
 
 @app.get("/api/collections")
 async def get_collections(request: Request):
@@ -557,7 +558,11 @@ async def agent_chat(
     total_time = time.perf_counter() - start_time
 
     contexts = result.get("contexts_list") or []
+
+    # --------- สำคัญ: กำหนดค่าเริ่มต้นไว้ก่อน ----------
     eval_info = None
+    ragas_metrics = {"status": "skipped"}   # กัน UnboundLocalError แน่ ๆ
+    # ----------------------------------------------------
 
     if log_eval:
         prompt = (
@@ -585,10 +590,9 @@ async def agent_chat(
             "eval_answer_preview": (eval_answer[:200] + "...") if eval_answer else ""
         }
 
-    ragas_metrics = None
     if return_ragas_metrics:
         try:
-            ragas_metrics = local_ragas_eval(
+            ragas_metrics = compute_ragas_single(
                 question=message,
                 contexts=contexts,
                 answer=result.get("llm_answer", "")
@@ -606,6 +610,7 @@ async def agent_chat(
         "ragas": ragas_metrics
     }
     return sanitize_json(response)
+
 
 if __name__ == "__main__":
     import uvicorn

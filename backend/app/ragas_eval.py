@@ -49,7 +49,7 @@ def _extract_scores_dataframe_like(result_obj) -> Dict[str, Any]:
 def _guess_ground_truth(question: str, contexts: List[str]) -> str | None:
     """
     พยายามเด้ง ground_truth จากบริบทที่เป็นรูป Q/A:
-    - หา block "Question: ...\nAnswer: ..." ที่ 'คล้าย' กับคำถาม
+    - หา block "Question: ...\\nAnswer: ..." ที่ 'คล้าย' กับคำถาม
     - ถ้าพบ คืนข้อความหลัง "Answer:" เป็น ground_truth
     """
     q = (question or "").strip().lower()
@@ -70,11 +70,14 @@ def _guess_ground_truth(question: str, contexts: List[str]) -> str | None:
 
 def local_ragas_eval(question: str, answer: str, contexts: List[str]) -> Dict[str, Any]:
     """
-    Evaluate RAG outputs using RAGAS (อัตโนมัติเลือก judge):
-    - มี OPENAI_API_KEY → ใช้ OpenAI (แม่นขึ้น)
-    - ไม่มี → ใช้ Ollama+OllamaEmbeddings
-    - ถ้ามี ground_truth (เด้งจาก contexts) จะคำนวณครบ 4 metric
-      ถ้าไม่มี จะคำนวณเฉพาะ faithfulness / answer_relevancy
+    ใช้ OpenAI เป็นกรรมการได้ พร้อมอนุญาตให้ EVAL_EMBED_MODEL เป็น sentence-transformers/*
+    - ถ้ามี OPENAI_API_KEY → judge=OpenAI (เช่น gpt-4o-mini)
+    - ฝั่ง Embeddings:
+        * ถ้า EVAL_EMBED_MODEL เริ่มด้วย 'sentence-transformers' → ใช้ HuggingFaceEmbeddings
+        * ถ้าไม่ใช่ และมี OPENAI_API_KEY → ใช้ OpenAIEmbeddings
+        * ถ้าไม่ใช่ และไม่มี OPENAI_API_KEY → ใช้ OllamaEmbeddings
+    - ถ้ามี ground_truth (เด้งจาก contexts) จะคำนวณครบ 4 metric มิฉะนั้นคิดเฉพาะ faithfulness/answer_relevancy
+    - เพิ่ม fallback ให้ context_precision ถ้า RAGAS คืน None/NaN
     """
     try:
         from datasets import Dataset
@@ -85,52 +88,112 @@ def local_ragas_eval(question: str, answer: str, contexts: List[str]) -> Dict[st
 
         use_openai = bool(os.getenv("OPENAI_API_KEY"))
 
+        # --- เลือก LLM (กรรมการ) ---
         if use_openai:
-            from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-            llm = ChatOpenAI(model=os.getenv("RAGAS_JUDGE_MODEL", "gpt-4o-mini"), temperature=0)
-            embeddings = OpenAIEmbeddings(model=os.getenv("EVAL_EMBED_MODEL", "text-embedding-3-large"))
+            from langchain_openai import ChatOpenAI
+            judge = ChatOpenAI(
+                model=os.getenv("RAGAS_JUDGE_MODEL", "gpt-4o-mini"),
+                temperature=0
+            )
             judge_name = "openai"
         else:
             from langchain_community.chat_models import ChatOllama
-            from langchain_community.embeddings import OllamaEmbeddings
-            llm = ChatOllama(
+            judge = ChatOllama(
                 model=os.getenv("OLLAMA_MODEL", "llama3.2"),
-                base_url=os.getenv("OLLAMA_BASE_URL", "http://ollama:11434"),
-            )
-            embeddings = OllamaEmbeddings(
-                model=os.getenv("OLLAMA_EMBED_MODEL", os.getenv("OLLAMA_MODEL", "llama3.2")),
                 base_url=os.getenv("OLLAMA_BASE_URL", "http://ollama:11434"),
             )
             judge_name = "ollama"
 
-        gt = _guess_ground_truth(question, contexts)  # เด้ง ground_truth อัตโนมัติถ้าเจอ
-        has_gt = bool(gt and gt.strip())
+        # --- เลือก Embeddings ตาม EVAL_EMBED_MODEL ---
+        em_name = os.getenv("EVAL_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+        if em_name.startswith("sentence-transformers"):
+            from langchain_community.embeddings import HuggingFaceEmbeddings
+            embeddings = HuggingFaceEmbeddings(
+                model_name=em_name,
+                encode_kwargs={"normalize_embeddings": True}
+            )
+        else:
+            if use_openai:
+                from langchain_openai import OpenAIEmbeddings
+                embeddings = OpenAIEmbeddings(model=em_name)
+            else:
+                from langchain_community.embeddings import OllamaEmbeddings
+                embeddings = OllamaEmbeddings(
+                    model=os.getenv("OLLAMA_EMBED_MODEL", os.getenv("OLLAMA_MODEL", "llama3.2")),
+                    base_url=os.getenv("OLLAMA_BASE_URL", "http://ollama:11434"),
+                )
 
+        # --- เตรียม contexts (dedup + จำกัด top-k เพื่อความเร็ว) ---
+        topk = int(os.getenv("RAGAS_EVAL_TOPK", "6"))  # ตั้งค่าได้ใน env
+        seen = set()
+        contexts_clean: List[str] = []
+        for c in contexts or []:
+            s = (c or "").strip()
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            contexts_clean.append(s)
+            if len(contexts_clean) >= topk:
+                break
+
+        # --- สร้าง Dataset ---
+        gt = _guess_ground_truth(question, contexts_clean)
+        has_gt = bool(gt and gt.strip())
         ds = Dataset.from_dict({
             "question": [question or ""],
-            "contexts": [contexts or []],
+            "contexts": [contexts_clean],
             "answer":   [answer or ""],
-            # ถ้ามี gt ใส่จริง, ถ้าไม่มี ใส่ "" ก็ได้ (แต่เราจะเลือก metric ให้เหมาะ)
             "ground_truth": [gt or ""]
         })
 
-        # เลือก metric ให้เหมาะกับข้อมูลที่มี
+        # --- เลือก metrics ---
         metrics = [faithfulness, answer_relevancy]
         if has_gt:
             metrics += [context_precision, context_recall]
 
-        result = evaluate(ds, metrics=metrics, llm=llm, embeddings=embeddings)
+        result = evaluate(ds, metrics=metrics, llm=judge, embeddings=embeddings)
         scores = _extract_scores_dataframe_like(result)
 
-        # ให้ key ครบทั้ง 4 เสมอ แต่ถ้าไม่ได้คำนวณก็เป็น None
+        # เติม key ให้ครบ และตั้ง None ให้ metric ที่ไม่ได้คำนวณ
         for k in ["context_precision", "faithfulness", "answer_relevancy", "context_recall"]:
-            if k not in scores or scores[k] is None:
-                if (k in ["context_precision", "context_recall"]) and not has_gt:
-                    scores[k] = None  # ไม่คำนวณ เพราะไม่มี ground_truth
-                else:
-                    # กันเวอร์ชันแปลก ๆ
-                    scores[k] = None
+            if k not in scores or (scores[k] is None and (k in ["context_precision", "context_recall"] and not has_gt)):
+                scores[k] = None
 
-        return {"status": "ok", "scores": scores, "judge": judge_name, "has_ground_truth": has_gt}
+        # ---- Fallback for context_precision (เมื่อ RAGAS คืน None/NaN) ----
+        try:
+            import math
+            import numpy as np
+
+            def _is_bad(x):
+                return (x is None) or (isinstance(x, float) and (math.isnan(x) or math.isinf(x)))
+
+            if has_gt and _is_bad(scores.get("context_precision")) and contexts_clean:
+                # ใช้ embeddings เดิม (ไม่ว่า OpenAI/HF/Ollama) คำนวณ cosine แบบทั่วไป
+                gt_vec = embeddings.embed_query(gt)
+                ctx_vecs = embeddings.embed_documents(contexts_clean)
+
+                def _cosine(a, b):
+                    a = np.array(a, dtype=float); b = np.array(b, dtype=float)
+                    an = np.linalg.norm(a); bn = np.linalg.norm(b)
+                    if an == 0 or bn == 0:
+                        return 0.0
+                    return float(np.dot(a, b) / (an * bn))
+
+                sims = [_cosine(gt_vec, v) for v in ctx_vecs]
+                threshold = float(os.getenv("PRECISION_FALLBACK_THRESHOLD", "0.40"))
+                rel = sum(1 for s in sims if s >= threshold)
+                total = len(ctx_vecs)
+                scores["context_precision"] = (rel / total) if total > 0 else None
+        except Exception:
+            # ถ้าคำนวณ fallback มีปัญหา ให้คงค่า None ไว้
+            pass
+
+        return {
+            "status": "ok",
+            "scores": scores,
+            "judge": judge_name,
+            "has_ground_truth": has_gt
+        }
+
     except Exception as e:
         return {"status": "skipped", "reason": str(e)}

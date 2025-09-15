@@ -30,7 +30,7 @@ pytesseract
 Pillow
 
 # ---- RAGAS & friends
-ragas==0.1.17
+ragas==0.1.19
 datasets>=2.19.0
 pandas>=2.1
 tqdm
